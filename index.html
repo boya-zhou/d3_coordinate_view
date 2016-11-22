@@ -1,0 +1,969 @@
+<style>
+body {
+  font: 10px sans-serif;
+}
+.box line,
+.box rect,
+.box circle {
+  fill: steelblue;
+  stroke: #000;
+  stroke-width: 1px;
+}
+.box .center {
+  stroke-dasharray: 3,3;
+}
+.box .outlier {
+  fill: none;
+  stroke: #000;
+}
+
+</style>
+
+<body>
+  <h1> Multiple Views </h1>
+  <form>
+  	<label><input type="radio" name="mode" value="week" checked> Back to Week</label>
+	</form>
+  <script src="https://d3js.org/d3.v3.min.js"></script>
+  <script src="box.js"></script>
+</body>
+
+<script>
+/*
+	1.mousebarPieBox: when mouse over on bar, Pie and Box will change
+*/
+    d3.csv("factor_new.csv", function (error, data) {
+    	var callbackError = error;
+    	var traffic = data;
+    	traffic.forEach(function(d){	
+    		d.weekday = +d.weekday;
+    		d.hour = +d.hour;
+    		d.mode = d.mode;
+    		d.fatal_num = +d.fatal_num;
+    	})
+        
+        //roll up for week
+    	var weekNest = d3.nest().key(function(d) {return d.weekday;})
+    	                        .rollup(function(leaves) {
+    	                        	return d3.sum(leaves,function(d){return d.fatal_num;})
+    	                        		})
+    	                        .entries(data);
+    	var dictWeekName = {"1" : "Monday",
+    					"2" : "Tuesday",
+    					"3" : "Wednesday",
+    					"4" : "Thursday",
+    					"5" : "Friday",
+    				    "6" : "Satuarday",
+    				    "7" : "Sunday"};
+    	weekNest.forEach(function(d) {
+    		d.dayName = dictWeekName[d.key]
+    	})                       
+    	
+    	//roll up for mode way
+    	var modeNest = d3.nest().key(function(d) {return d.mode;})
+                        .rollup(function(leaves) {
+                        	return d3.sum(leaves,function(d){return d.fatal_num;})
+                        		})
+                        .entries(data);
+        //console.log(traffic)
+    	var colorPie = d3.scale.ordinal()
+			.domain(['motor','sedean','van','truck'])
+			.range(["#a2c0d9", "#7da7ca", "#588ebb", "#b5cde1"]);
+    	var dispatch = d3.dispatch("mousebarPieBox","mousepieBarBox",'mouseboxBarPie'
+    		,'mouseoutBar','mouseoutPie','mouseoutBox','clickBar','backToWeek','clickChange','clickBack');
+    	var dispatchClick = d3.dispatch("mousepieBar","mouseboxBar",'mouseoutPie','mouseoutBox');
+    	
+		//console.log("here")
+    	buildStack(weekNest, traffic, dispatch,dictWeekName, dispatchClick);
+    	buildPie(modeNest, traffic, dispatch, colorPie);
+    	buildBox(traffic, dispatch);
+    	d3.selectAll(".loadRect")
+		  			.on("mouseover", function(d,i){
+		  				d3.select(this).style("fill","orange");
+						dispatch.mousebarPieBox(i);
+		  			});
+		  			
+		d3.selectAll(".loadRect")	
+		  			.on("mouseout", function(d,i) {
+		  				d3.select(this).style('fill','steelblue');
+		  				dispatch.mouseoutBar();
+		  			})
+   		d3.selectAll(".loadArc")
+		  			.on("mouseover", function(d,i){
+		  				d3.select(this).style("fill","orange");
+						dispatch.mousepieBarBox(d.data.key);
+						dispatchClick.mousepieBar(d.data.key);
+		  			});
+		  			
+		d3.selectAll(".loadArc")	
+		  			.on("mouseout", function(d,i) {
+		  				d3.select(this).style('fill',function(d, i) { return colorPie(d.data.key);});
+		  				dispatch.mouseoutPie();
+		  				dispatchClick.mouseoutPie();
+		  			})
+   		d3.selectAll(".box rect")
+		  			.on("mouseover", function(d,i){
+		  				d3.select(this).style("fill","orange");
+		  				//console.log(this.parentNode.className['baseVal']);
+						dispatch.mouseboxBarPie(this.parentNode.className['baseVal']);
+						dispatchClick.mouseboxBar(this.parentNode.className['baseVal']);
+		  			});
+   		d3.selectAll(".box rect")
+		  			.on("mouseout", function(d,i){
+		  				d3.select(this).style("fill","steelblue");
+		  				dispatch.mouseoutBox();
+		  				dispatchClick.mouseoutBox();
+		  			});
+		d3.selectAll("input").on("change", change);
+			var timeout = setTimeout(function() {
+			  d3.select("input[value=\"week\"]").property("checked", false).each(change);
+			}, 0);
+			function change() {
+			  clearTimeout(timeout);
+			  //console.log('click');
+			  dispatch.backToWeek();
+		};
+		d3.selectAll(".loadRect")
+			.on("click", function(d,i){
+				dispatch.clickBar(i);
+			});
+		//console.log(d3.select('input:checked').property("checked"));
+    
+    });
+    
+    function buildStack(weekNest, traffic, dispatch, dictWeekName, dispatchClick){
+    	//reference : https://bl.ocks.org/mbostock/3885304
+    	var margin = {top: 20, right: 20, bottom: 60, left: 40},
+    		width = 450 - margin.left - margin.right,
+    		height = 350 - margin.top - margin.bottom;
+		maxWeek = d3.max(weekNest, function(d){return d.values;});
+		//console.log(weekNest);
+    	
+    	var x = d3.scale.ordinal().domain(weekNest.map(function(d) { return d.dayName})).rangeRoundBands([0, width], .05);
+		var y = d3.scale.linear().domain([0, maxWeek]).range([height, 0]);
+		var xAxis = d3.svg.axis()
+    		.scale(x)
+    		.orient("bottom");
+    		
+		var yAxis = d3.svg.axis()
+    		.scale(y)
+    		.orient("left")
+    		.ticks(10);
+		var svg = d3.select("body").append("svg")
+    			.attr("width", width + margin.left + margin.right)
+    			.attr("height", height + margin.top + margin.bottom)
+  				.append("g")
+  				.attr('class','barSvg')
+				.attr("transform", 
+          				"translate(" + margin.left + "," + margin.top + ")");
+		
+		var barXaxis = svg.append("g")
+      		.attr("class", "barXaxis")
+      		.attr("transform", "translate(0," + height + ")")
+      		.call(xAxis)
+      		.selectAll("text")
+  		    .style("font-size","10px");
+  		
+  		var barYaxis = svg.append("g")
+      		.attr("class", "barYaxis")
+      		.call(yAxis);
+  		
+  		var loadRect = svg.selectAll(".loadRect")
+      		.data(weekNest)
+    		.enter().append("rect")
+      		.style("fill", "steelblue")
+      		.attr("class", "loadRect")
+      		.attr("x", function(d) { return x(d.dayName); })
+      		.attr("width", x.rangeBand())
+      		.attr("y", function(d) { return y(d.values); })
+      		.attr("height", function(d) { return height - y(d.values); });
+  		
+  		//make a empty bars
+  		var dispatchRect = svg.selectAll(".dispatchRect")
+      		.data(weekNest)
+    		.enter().append("rect")
+      		.style("fill", "orange")
+      		.attr("class", "dispatchRect")
+      		.attr("x", function(d) { return x(d.dayName); })
+      		.attr("width", x.rangeBand())
+      		.attr("y", function(d) { return height; })
+      		.attr("height", function(d) { return 0; });
+  		
+  		dispatch.on("mousepieBarBox.bar",function(mode){
+  			//console.log(mode);
+  			//first: get only mode == mode in traffic, and transfer in same format with weekNest
+  			//console.log(mode);
+  			if (d3.selectAll('.loadRect').attr('height') != 0){
+  			//dispatchClick.on("mousepieBar",null);
+
+  			var modeToUse = traffic.filter(function(d) {return d.mode == mode;});
+  			var modeToUseNest = d3.nest()
+  				.key(function(d) {return d.weekday;})
+  				.rollup(function(leaves) {return d3.sum(leaves, function(d){return d.fatal_num;})})
+  				.entries(modeToUse);
+			//console.log(modeToUseNest);
+			dispatchRect = dispatchRect.data(modeToUseNest);
+			dispatchRect.transition().duration(450)
+			      		.attr("y", function(d) { return y(d.values);; })
+      					.attr("height", function(d) { return height - y(d.values); });  				
+  			}
+  			var modeToUse = traffic.filter(function(d) {return d.mode == mode;});
+  			//console.log(modeToUse);
+  			//second,group on weekday and aggregate on fatal num
+  			//console.log(d3.selectAll('.clickHourRect')[0].length);
+
+  			});
+ 		
+ 		dispatch.on("mouseboxBarPie.bar",function(mode){
+ 			if (d3.selectAll('.loadRect').attr('height') != 0){
+ 			//dispatchClick.on("mouseboxBar",null);
+
+  			mode = mode.split('box')[1]
+  			//console.log(mode);
+  			//first: get only mode == mode in traffic, and transfer in same format with weekNest
+  			//console.log(traffic);
+  			var modeToUse = traffic.filter(function(d) {return d.mode == mode;});
+  			//console.log(modeToUse);
+  			//second,group on weekday and aggregate on fatal num
+  			var modeToUseNest = d3.nest()
+  				.key(function(d) {return d.weekday;})
+  				.rollup(function(leaves) {return d3.sum(leaves, function(d){return d.fatal_num;})})
+  				.entries(modeToUse);
+			//console.log(modeToUseNest);
+			dispatchRect = dispatchRect.data(modeToUseNest);
+			dispatchRect.transition().duration(450)
+			      		.attr("y", function(d) { return y(d.values);; })
+      					.attr("height", function(d) { return height - y(d.values); }); 				
+ 			}
+
+  		});
+  		dispatch.on("mouseoutPie.bar", function(){
+			dispatchRect.transition().duration(450)
+			      		.attr("y", function(d) { return height;; })
+      					.attr("height", function(d) { return 0; });
+  		});
+  		dispatch.on('mouseoutBox.bar',function(){
+			dispatchRect.transition().duration(450)
+			      		.attr("y", function(d) { return height;; })
+      					.attr("height", function(d) { return 0; });
+  		});
+  		dispatch.on('clickBar.bar',function(day){
+  			//this part is for update listener for the second round
+  			if ((d3.selectAll('.clickHourRect')[0].length) != 0){
+  			//update from null
+			dispatchClick.on('mousepieBar',function(mode){
+				// console.log('pie to bar');
+				// console.log(mode)cons
+
+				var modeToUse = day24hour.filter(function(d){return d.mode == mode;});
+				//console.log(modeToUse);
+
+				var hoursnow = [];
+				modeToUse.forEach(function(d){hoursnow.push(d.hour);});
+				var partmodeToUse = modeToUse.map(function(d,i){
+					return {
+						hour : d.hour,
+						fatal_num : d.fatal_num
+					};
+				});
+				//console.log(hoursnow);
+				var hour24 = d3.range(0,24);
+				hour24.forEach(function(d){
+					if (hoursnow.includes(d)){
+						null;
+					} else{
+						partmodeToUse.push({'hour':d,'fatal_num':0})
+					}
+				});
+
+				partmodeToUse.sort(function(a, b) {
+					return a.hour - b.hour;
+					});
+
+				//console.log(partmodeToUse);
+				clickHourRect = clickHourRect.data(partmodeToUse);
+
+				clickHourRect.transition().duration(750)
+				      		.attr("y", function(d) { return clickY(d.fatal_num); })
+	      					.attr("height", function(d) { return height - clickY(d.fatal_num); });					
+			});
+
+			dispatchClick.on('mouseboxBar',function(modeID){
+				// console.log('box to bar');
+				// console.log(modeID);
+				var mode = modeID.split('box')[1];
+				var modeToUse = day24hour.filter(function(d){return d.mode == mode;});
+				var hoursnow = [];
+				modeToUse.forEach(function(d){hoursnow.push(d.hour);});
+				var partmodeToUse = modeToUse.map(function(d,i){
+					return {
+						hour : d.hour,
+						fatal_num : d.fatal_num
+					};
+				});
+				//console.log(hoursnow);
+				var hour24 = d3.range(0,24);
+				hour24.forEach(function(d){
+					if (hoursnow.includes(d)){
+						null;
+					} else{
+						partmodeToUse.push({'hour':d,'fatal_num':0})
+					}
+				});
+
+				partmodeToUse.sort(function(a, b) {
+					return a.hour - b.hour;
+					});
+
+				//console.log(partmodeToUse);
+				clickHourRect = clickHourRect.data(partmodeToUse);
+
+				clickHourRect.transition().duration(750)
+				      		.attr("y", function(d) { return clickY(d.fatal_num); })
+	      					.attr("height", function(d) { return height - clickY(d.fatal_num); });					
+				
+				//notice that the length of data will be different
+			
+			});
+  			}
+  			d3.select("input[value=\"week\"]").property("checked", false);
+  			//d3.event.stopPropagation();
+  			//console.log(day);
+  			day += 1;
+  			//first pick only traffic.weekday == day
+  			day24hour = traffic.filter(function(d){return d.weekday == day;});
+
+
+  			day24hourNestMode = day24hour.map(function(d,i){
+  				return {
+  					fatal_num: d.fatal_num,
+  					hour : d.hour,
+  					mode: d.mode
+  				};
+  			});
+
+  			var day24hourNestModeSum = d3.nest()
+  				.key(function(d){return parseInt(d.hour)})
+  				.rollup(function(v) {return d3.sum(v, function(d){return d.fatal_num;});})
+  				.entries(day24hourNestMode);
+
+			day24hourNestModeSum = day24hourNestModeSum.map(function(d){
+				return {
+					hour : +d.key,
+					fatal_num : d.values
+				};
+			});
+
+  			//console.log(day24hour);
+
+  			//console.log(day24hourNestModeSum);
+  			//console.log(day24hourNestModeSum);
+
+			maxDay = d3.max(day24hourNestModeSum, function(d){return d.fatal_num;});
+	    	var clickX = d3.scale.ordinal().domain(day24hourNestModeSum.map(function(d) { return (d.hour + 1)})).rangeRoundBands([0, width], .05);
+			var clickY = d3.scale.linear().domain([0, maxDay]).range([height, 0]);
+			var xClickAxis = d3.svg.axis()
+	    		.scale(clickX)
+	    		.orient("bottom");
+	    		
+			var yClickAxis = d3.svg.axis()
+	    		.scale(clickY)
+	    		.orient("left")
+	    		.ticks(10);
+			
+			//first create 24 empty rect
+			if (d3.select('.clickRect').empty()){
+		  		var clickRect = svg.selectAll(".clickRect")
+		      		.data(day24hourNestModeSum)
+		    		.enter().append("rect")
+		      		.style("fill", "steelblue")
+		      		.attr("class", "clickRect")
+		      		.attr("x", function(d) { return clickX(d.hour + 1); })
+		      		.attr("width", clickX.rangeBand())
+		      		.attr("y", function(d) { return height; })
+		      		.attr("height", function(d) { return 0; });				
+			}
+			
+			//the transition will be like, the loadRect disappear by time, the clickRect show by time(in x asecend order)
+      		d3.selectAll('.loadRect').transition()
+      			.delay(function(d,i){return i * 96})
+      			.duration(450)
+	      		.attr("y", function(d) { return height;; })
+				.attr("height", function(d) { return 0; });
+			
+			//console.log(day24hour);
+			d3.selectAll('.clickRect').transition()
+				.delay(function(d,i){return i * 28})
+				.duration(450)
+	      		.attr("y", function(d) { return clickY(d.fatal_num); })
+      			.attr("height", function(d) { return height - clickY(d.fatal_num); });
+  			
+  			//console.log()
+  			var axisTransition = svg.transition().duration(1122);
+  			axisTransition.select('.barXaxis').call(xClickAxis);
+  			axisTransition.select('.barYaxis').call(yClickAxis);
+			dispatch.clickChange([day,day24hour]);
+
+
+	    	d3.selectAll(".clickRect")
+	  			.on("mouseover", function(d,i){
+	  				d3.select(this).style("fill","orange");
+	  				//console.log('here');
+					//dispatchClick.mousebarPieBox([day, i]);
+	  			});
+		  			
+			d3.selectAll(".clickRect")	
+	  			.on("mouseout", function(d,i) {
+	  				d3.select(this).style('fill','steelblue');
+	  				//dispatchClick.mouseoutBar(day);
+	  			});
+
+	  		//make new empty rect
+
+	  		//make a empty bars
+	  		if (d3.select('.clickHourRect').empty()){
+		  		clickHourRect = svg.selectAll(".clickHourRect")
+		      		.data(day24hourNestModeSum)
+		    		.enter().append("rect")
+		      		.style("fill", "orange")
+		      		.attr("class", "clickHourRect")
+		      		.attr("x", function(d) {  return clickX(d.hour + 1); })
+		      		.attr("width", clickX.rangeBand())
+		      		.attr("y", function(d) { return height; })
+		      		.attr("height", function(d) { return 0; });
+	      	}
+
+			dispatchClick.on('mousepieBar',function(mode){
+				// console.log('pie to bar');
+				// console.log(mode)cons
+
+				var modeToUse = day24hour.filter(function(d){return d.mode == mode;});
+
+				var modeToUse = modeToUse.map(function(d){
+					return {
+						fatal_num : d.fatal_num,
+						hour : d.hour
+					};
+				});
+
+	  			var modeToUseNest = d3.nest()
+	  				.key(function(d){return parseInt(d.hour)})
+	  				.rollup(function(v) {return d3.sum(v, function(d){return d.fatal_num;});})
+	  				.entries(modeToUse);
+				
+				modeToUseNest = modeToUseNest.map(function(d) {
+					return {
+						hour : +d.key,
+						fatal_num : d.values
+					};
+				});
+
+				//console.log(modeToUseNest);
+
+				var hoursnow = [];
+				modeToUseNest.forEach(function(d){hoursnow.push(d.hour);});
+				var partmodeToUse = modeToUseNest.map(function(d,i){
+					return {
+						hour : d.hour,
+						fatal_num : d.fatal_num
+					};
+				});
+				//console.log(hoursnow);
+				var hour24 = d3.range(0,24);
+				hour24.forEach(function(d){
+					if (hoursnow.includes(d)){
+						null;
+					} else{
+						partmodeToUse.push({'hour':d,'fatal_num':0})
+					}
+				});
+
+				partmodeToUse.sort(function(a, b) {
+					return a.hour - b.hour;
+					});
+
+				//console.log(partmodeToUse);
+				clickHourRect = clickHourRect.data(partmodeToUse);
+
+				clickHourRect.transition().duration(750)
+				      		.attr("y", function(d) { return clickY(d.fatal_num); })
+	      					.attr("height", function(d) { return height - clickY(d.fatal_num); });					
+			});
+
+			dispatchClick.on('mouseboxBar',function(modeID){
+				// console.log('box to bar');
+				// console.log(modeID);
+				var mode = modeID.split('box')[1];
+				var modeToUse = day24hour.filter(function(d){return d.mode == mode;});
+				var modeToUse = modeToUse.map(function(d){
+					return {
+						fatal_num : d.fatal_num,
+						hour : d.hour
+					};
+				});
+
+	  			var modeToUseNest = d3.nest()
+	  				.key(function(d){return parseInt(d.hour)})
+	  				.rollup(function(v) {return d3.sum(v, function(d){return d.fatal_num;});})
+	  				.entries(modeToUse);
+				
+				modeToUseNest = modeToUseNest.map(function(d) {
+					return {
+						hour : +d.key,
+						fatal_num : d.values
+					};
+				});
+
+				//console.log(modeToUseNest);
+
+				var hoursnow = [];
+				modeToUseNest.forEach(function(d){hoursnow.push(d.hour);});
+				var partmodeToUse = modeToUseNest.map(function(d,i){
+					return {
+						hour : d.hour,
+						fatal_num : d.fatal_num
+					};
+				});
+				//console.log(hoursnow);
+				var hour24 = d3.range(0,24);
+				hour24.forEach(function(d){
+					if (hoursnow.includes(d)){
+						null;
+					} else{
+						partmodeToUse.push({'hour':d,'fatal_num':0})
+					}
+				});
+
+				partmodeToUse.sort(function(a, b) {
+					return a.hour - b.hour;
+					});
+
+				//console.log(partmodeToUse);
+				clickHourRect = clickHourRect.data(partmodeToUse);
+
+				clickHourRect.transition().duration(750)
+				      		.attr("y", function(d) { return clickY(d.fatal_num); })
+	      					.attr("height", function(d) { return height - clickY(d.fatal_num); });
+			
+			});
+
+			dispatchClick.on('mouseoutPie',function(){
+				//console.log('mouse out from pie')
+				clickHourRect.transition().duration(550)
+				      		.attr("y", function(d) { return height; })
+	      					.attr("height", function(d) { return 0; });
+			});
+
+			dispatchClick.on('mouseoutBox',function(){
+				//console.log('mouse out from box')
+
+				clickHourRect.transition().duration(550)
+				      		.attr("y", function(d) { return height; })
+	      					.attr("height", function(d) { return 0; });
+			});
+
+			//dispath on click empty
+			dispatch.on('backToWeek',function(){
+				//d3.event.stopPropagation();
+				//the transition will be like, the loadRect disappear by time, the clickRect show by time(in x asecend order)
+	      		loadRect.transition()
+	      			.delay(function(d,i){return i * 96})
+	      			.duration(450)
+		      		.attr("y", function(d) { return y(d.values); })
+		      		.attr("height", function(d) { return height - y(d.values); });
+				//console.log(day24hour);
+				d3.selectAll('.clickRect').transition()
+					.delay(function(d,i){return i * 28})
+					.duration(450)
+		      		.attr("y", function(d) { return height; })
+	      			.attr("height", function(d) { return 0; });
+	  			var axisBackTransition = svg.transition().duration(1122);
+	  			axisBackTransition.select('.barXaxis').call(xAxis);
+	  			axisBackTransition.select('.barYaxis').call(yAxis);
+				//console.log('clicked!')
+				d3.select("input[value=\"week\"]").property("checked", false);
+				
+				dispatch.clickBack();
+				dispatchClick.on("mousepieBar",null);
+				dispatchClick.on("mouseboxBar",null);
+			
+			});
+  		});
+	};
+		    
+    function buildPie(modeNest, traffic, dispatch, colorPie){
+    	var margin = {top: 20, right: 20, bottom: 60, left: 40},
+    		width = 450 - margin.left - margin.right,
+    		height = 350 - margin.top - margin.bottom;
+		var radius = height/2	
+		var arc = d3.svg.arc()
+			.outerRadius(radius - 10)
+			.innerRadius(0);
+		var pie = d3.layout.pie()
+			.sort(null)
+			.value(function(d) {return d.values;});
+		var svg = d3.select("body").append("svg")
+    			.attr("width", width + margin.left + margin.right)
+    			.attr("height", height + margin.top + margin.bottom)
+  				.append("g")
+				.attr("transform", 
+          				"translate(" + width/2 + "," + height/2 + ")");
+		//console.log(modeNest);
+		modeNest.sort(function(a, b) {
+			  var nameA = a.key.toUpperCase(); // ignore upper and lowercase
+			  var nameB = b.key.toUpperCase(); // ignore upper and lowercase
+			  if (nameA < nameB) {
+			    return -1;
+			  }
+			  if (nameA > nameB) {
+			    return 1;
+			  }
+			  // names must be equal
+			  return 0;
+			});
+	    
+	    var path = svg.datum(modeNest).selectAll("path")
+	       .data(pie((modeNest).sort()))
+	       .enter().append("path")
+	       .attr("class","loadArc")
+	       .attr("id",function(d) {return d.data.key})
+	       .attr("fill", function(d, i) { return colorPie(d.data.key);})
+	       .attr("d", arc)
+	       .each(function(d) { this._current = d; }); // store the initial angles
+        var textPie = svg.selectAll("text")
+        	.data(pie((modeNest)).sort())
+        	.enter().append("text")
+        	.attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; })
+        	.text(function(d) { return d.data.key; })
+        	.style("text-anchor", "middle");
+		//weekdayToUse is a list of dict only contain weekyday == i  from 1 to 7
+		dispatch.on('mousebarPieBox.pie', function(day) {
+			//filter the data
+			var weekdayToUse = traffic.filter(function(d){
+				return parseInt(d['weekday']) == parseInt(day +1);
+			})
+			
+			//change the format of data as same as the input of pie, same as modeNest
+			var weekdayToUseSame =  weekdayToUse.map(function(d){
+				return {
+					"key" : d.mode,
+					"values" : +d.fatal_num
+				};
+			});
+    		var weekdayToUseNest = d3.nest().key(function(d) {return d.key;})
+                        .rollup(function(leaves) {
+                        	return d3.sum(leaves,function(d){return d.values;})
+                        		})
+                        .entries(weekdayToUseSame);			
+			weekdayToUseNest.sort(function(a, b) {
+				  var nameA = a.key.toUpperCase(); // ignore upper and lowercase
+				  var nameB = b.key.toUpperCase(); // ignore upper and lowercase
+				  if (nameA < nameB) {
+				    return -1;
+				  }
+				  if (nameA > nameB) {
+				    return 1;
+				  }
+				  // names must be equal
+				  return 0;
+				});
+		    //pie.value(function(d) { return d["values"]; }); // change the value function
+    		path = path.data(pie((weekdayToUseNest).sort())); // compute the new angles
+    		path.transition().duration(450).attrTween("d", arcTween); // redraw the arcs
+			
+			function arcTween(a) {
+			  var i = d3.interpolate(this._current, a);
+			  this._current = i(0);
+			  return function(t) {
+			    return arc(i(t));
+			  };
+			}
+			textPie.data(pie(weekdayToUseNest));
+			textPie.transition().duration(450).attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; });			
+		});
+		
+		dispatch.on('mouseboxBarPie.pie',function(mode){
+			mode = mode.split('box')[1]
+			modeID = '#' + mode
+			//console.log(modeID)
+			d3.select(modeID).transition().duration(450)
+				.style('fill','orange');
+			//console.log(mode)
+		});
+		dispatch.on('mouseoutBar.pie',function(){
+		    //pie.value(function(d) { return d["values"]; }); // change the value function
+    		path = path.data(pie(modeNest)); // compute the new angles
+    		path.transition().duration(450).attrTween("d", arcTween); // redraw the arcs
+			
+			function arcTween(a) {
+			  var i = d3.interpolate(this._current, a);
+			  this._current = i(0);
+			  return function(t) {
+			    return arc(i(t));
+			  };
+			}
+			textPie.data(pie(modeNest));
+			textPie.transition().duration(450).attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; });	
+		});
+		dispatch.on('mouseoutBox.pie',function(){
+			modeName = modeID.split('#')[1];
+			d3.select(modeID).transition().duration(450)
+				.style('fill',colorPie(modeName));
+		});
+
+		dispatch.on('clickBack.pie',function(){
+			//console.log('clickBackChange!');
+			//pie.value(function(d) { return d["values"]; }); // change the value function
+			//console.log('clickbackpie')
+    		path = path.data(pie(modeNest)); // compute the new angles
+    		path.transition().duration(450).attrTween("d", arcTween); // redraw the arcs
+			
+			function arcTween(a) {
+			  var i = d3.interpolate(this._current, a);
+			  this._current = i(0);
+			  return function(t) {
+			    return arc(i(t));
+			  };
+			}
+			textPie.data(pie(modeNest));
+			textPie.transition().duration(450).attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; });
+			
+			dispatch.on('mouseoutBar.pie',function(){
+			    //pie.value(function(d) { return d["values"]; }); // change the value function
+	    		path = path.data(pie(modeNest)); // compute the new angles
+	    		path.transition().duration(450).attrTween("d", arcTween); // redraw the arcs
+				
+				function arcTween(a) {
+				  var i = d3.interpolate(this._current, a);
+				  this._current = i(0);
+				  return function(t) {
+				    return arc(i(t));
+				  };
+				}
+				textPie.data(pie(modeNest));
+				textPie.transition().duration(450).attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; });	
+			});	
+			});
+
+		dispatch.on('clickChange.pie',function(resultList){
+			//console.log('clickChange!');
+			//console.log(resultList);
+			dispatch.on('mouseoutBar.pie',null);
+			day = resultList[0];
+			day24hour = resultList[1];
+			//change the format of data as same as the input of pie, same as modeNest
+			var day24hourSame =  day24hour.map(function(d){
+				return {
+					"key" : d.mode,
+					"values" : +d.fatal_num
+				};
+			});
+    		var day24hourNest = d3.nest().key(function(d) {return d.key;})
+                        .rollup(function(leaves) {
+                        	return d3.sum(leaves,function(d){return d.values;})
+                        		})
+                        .entries(day24hourSame);			
+			day24hourNest.sort(function(a, b) {
+				  var nameA = a.key.toUpperCase(); // ignore upper and lowercase
+				  var nameB = b.key.toUpperCase(); // ignore upper and lowercase
+				  if (nameA < nameB) {return -1;}
+				  if (nameA > nameB) {return 1;}
+				  // names must be equal
+				  return 0;
+				});
+		    //pie.value(function(d) { return d["values"]; }); // change the value function
+    		path = path.data(pie((day24hourNest).sort())); // compute the new angles
+    		path.transition().duration(1).attrTween("d", arcTween); // redraw the arcs
+			
+			function arcTween(a) {
+			  var i = d3.interpolate(this._current, a);
+			  this._current = i(0);
+			  return function(t) {
+			    return arc(i(t));
+			  };
+			}
+			textPie.data(pie(day24hourNest));
+			textPie.transition().duration(450).attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; });	
+		})
+
+
+    };
+    // reference : http://bl.ocks.org/jensgrubert/7789216
+    function buildBox(traffic, dispatch){
+    	var labels = true;
+    	var margin = {top: 20, right: 20, bottom: 60, left: 40},
+    		width = 450 - margin.left - margin.right,
+    		height = 350 - margin.top - margin.bottom;
+		function makeMatrix(traffic){
+			var trafficNest = d3.nest().key(function(d) {return d.mode;}).entries(traffic);
+			var data = [];
+			data[0] = [];
+			data[1] = [];
+			data[2] = [];
+			data[3] = [];
+			data[0][0] = "motor";
+			data[1][0] = "sedean";
+			data[2][0] = "van";
+			data[3][0] = "truck";
+			data[0][1] = [];
+			data[1][1] = [];
+			data[2][1] = [];
+			data[3][1] = [];
+			trafficNest.forEach(function(d, i) {
+				d.values.forEach(function(leaves, j){
+					data[i][1].push(leaves.fatal_num);
+				})
+			})
+			maxVal = d3.max([d3.max(data[0][1]),
+			d3.max(data[1][1]),
+			d3.max(data[2][1]),
+			d3.max(data[3][1])]);
+			minVal = d3.min([d3.min(data[0][1]),
+					d3.min(data[1][1]),
+					d3.min(data[2][1]),
+					d3.min(data[3][1])]);
+			return [data, maxVal, minVal];
+		}
+		resultList = makeMatrix(traffic);
+		data = resultList[0]
+		maxVal = resultList[1]
+		minVal = resultList[2]
+		
+		var chart = d3.box()
+			.whiskers(iqr(1.5))
+			.height(height)	
+			.domain([minVal, maxVal])
+			.showLabels(labels);
+		var svg = d3.select("body").append("svg")
+			.attr("width", width + margin.left + margin.right)
+			.attr("height", height + margin.top + margin.bottom)
+			.attr("class", "box")    
+			.append("g")
+			.attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+		
+		// the x-axis
+		var x = d3.scale.ordinal()	   
+			.domain( data.map(function(d) {  return d[0] } ) )	    
+			.rangeRoundBands([0 , width], 0.7, 0.3); 		
+		var xAxis = d3.svg.axis()
+			.scale(x)
+			.orient("bottom");
+		// the y-axis
+		var y = d3.scale.linear()
+			.domain([minVal, maxVal])
+			.range([height + margin.top, 0 + margin.top]);
+		
+		var yAxis = d3.svg.axis()
+	    	.scale(y)
+	    	.orient("left");
+		// draw the boxplots	
+		var box = svg.selectAll(".box")	   
+	      .data(data)
+		  .enter().append("g")
+			.attr("transform", function(d) { return "translate(" +  x(d[0])  + "," + margin.top + ")"; } )
+	      .call(chart.width(x.rangeBand())); 
+		
+	 
+		 // draw y axis
+		svg.append("g")
+	        .attr("class", "y axis")
+	        .call(yAxis)
+			.append("text") // and text1
+			  .attr("transform", "rotate(-90)")
+			  .attr("y", 6)
+			  .attr("dy", ".71em")
+			  .style("text-anchor", "end")
+			  .style("font-size", "13px");		
+		
+		// draw x axis	
+		svg.append("g")
+	      .attr("class", "x axis")
+	      .attr("transform", "translate(0," + (height  + margin.top + 10) + ")")
+	      .call(xAxis)
+		  .append("text")             // text label for the x axis
+	        .attr("x", (width / 2) )
+	        .attr("y",  10 )
+			.attr("dy", ".71em")
+	        .style("text-anchor", "middle")
+			.style("font-size", "13px"); 
+		// Returns a function to compute the interquartile range.
+		function iqr(k) {
+		  return function(d, i) {
+		    var q1 = d.quartiles[0],
+		        q3 = d.quartiles[2],
+		        iqr = (q3 - q1) * k,
+		        i = -1,
+		        j = d.length;
+		    while (d[++i] < q1 - iqr);
+		    while (d[--j] > q3 + iqr);
+		    return [i, j];
+		  };
+		}
+		dispatch.on('mousebarPieBox.box', function(day){
+			var weekdayToUse = traffic.filter(function(d){
+				return parseInt(d['weekday']) == parseInt(day +1);
+			})
+			//console.log(weekdayToUse);			
+			newResult = makeMatrix(weekdayToUse);
+			newData = newResult[0]
+			newMaxVal = newResult[1]
+			newMinVal = newResult[2]
+			//console.log(newData)
+			
+			box = box.data(newData)
+			chart = chart.domain([newMinVal, newMaxVal]);
+			box.transition().duration(450).call(chart.width(x.rangeBand())); 
+			// box.duration(450);
+		})
+		dispatch.on('mousepieBarBox.box',function(mode){
+			sMode = '.box' + mode
+			d3.select(sMode).select('rect')
+				.transition()
+				.duration(450)
+				.style('fill','orange');
+			//console.log(d3.select(sMode).select('rect'));
+		})
+		dispatch.on('mouseoutBar.box',function(){
+			box = box.data(data)
+			chart = chart.domain([minVal, maxVal]);
+			box.transition().duration(450).call(chart.width(x.rangeBand()));
+		})
+		dispatch.on('mouseoutPie.box',function(){
+			d3.select(sMode).select('rect')
+				.transition()
+				.duration(450)
+				.style('fill','steelblue');
+		})
+		dispatch.on('clickChange.box',function(resultList){
+			//console.log('clickChange.box!');
+			dispatch.on('mouseoutBar.box',null);
+			day24hour = resultList[1];
+			// var hourToUse = day24hour.filter(function(d){
+			// 	return parseInt(d['hour']) == parseInt(day +1);
+			// })			
+			newResult = makeMatrix(day24hour);
+			newData = newResult[0]
+			newMaxVal = newResult[1]
+			newMinVal = newResult[2]
+			//console.log(newData)
+			
+			box = box.data(newData)
+			chart = chart.domain([newMinVal, newMaxVal]);
+			box.call(chart.width(x.rangeBand()));		
+
+		})
+
+		dispatch.on('clickBack.box',function(){
+			//console.log('clickBackChange.box!');
+			box = box.data(data)
+			chart = chart.domain([minVal, maxVal]);
+			box.transition().duration(450).call(chart.width(x.rangeBand()));
+
+			dispatch.on('mouseoutBar.box',function(){
+				box = box.data(data)
+				chart = chart.domain([minVal, maxVal]);
+				box.call(chart.width(x.rangeBand()));
+			});
+		})
+	};
+</script>
