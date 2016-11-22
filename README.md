@@ -1,33 +1,14 @@
 Assignment 5 - Visualizations and Multiple Views  
 ===
-[Link](http://boyazhou1993.github.io/05-MapsAndViews/index.html) to our homework5.
-
-Teams
----
-Boya Zhou : boyazhou1993
-
-Yuting Liang : DarienLiang
-
+[Coordinate Views](http://boyazhou1993.github.io/05-MapsAndViews/index.html)
 
 Introduction to A5
 ---
 Data source: https://github.com/boyazhou1993/DataVisFinal/tree/master/originData/FARS2015NationalCSV
 
-This dataset will be used in our final project, so we are interested in it. 
+This data set show the traffic fatalities in year 2015 from many aspects. In this assignment, foucus on the number of fatalities in one week, and try to find the relations among number of fatalities, weekday, hour and commute mode.
 
-This data set show the traffic fatalities in year 2015 from many aspects. In this assignment, we foucus on the number of fatalities in one week, and try to find the relations among number of fatalities, weekday, hour and commute mode.
-
-However,the dataset itself is very complex(with 20 csv file in it), so we use python to process it(like join two table). Also, for some data, we need to aggregate it manaully, for example, there are more than 70 ways of commute way in dataset, so we manully make them into 4 groups: van, motor, sedean, truck. There are still other modes do not belong to these 4, we do not consider them in this assignment. As d3 beginner, we mainly focus on d3 event, dispatch in this assignment.
-
-Data complexity:
----
-The data contain two time level and one categorical feature, the 'target' feature will always be fatal num.
-
-It looks as below:
-
-   ![data](img/data.png)
-
-Visulazation complexity (Description of visualzation):
+Description of visualzation:
 ---
 This part will be introduced in this visualzation's 'lifetime' order:
 
@@ -89,9 +70,6 @@ The technical achievements mainly in two aspects: process data in d3 and d3 disp
    3. call or listern to some event only certain event already happen
    4. the coordinate view can be loop again and again 
    5. combine with setTimeOut 
-
-Design achievements
----
    
 
 
